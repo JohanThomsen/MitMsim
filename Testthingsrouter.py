@@ -9,7 +9,7 @@ class Network:
     def Connect_computer_to_network(self, host):
         self.hosts.append(host)
 
-    def Search_network_for_MAC_from_IP(self, IP):
+    def Send_ARP_Request(self, IP):
         for host in self.hosts:
             if host.IP == IP:
                 return host.MAC
@@ -26,6 +26,12 @@ class Network:
         for host in self.hosts:
             if host.IP == IP and host.MAC == MAC:
                 return host
+    
+    def findHost_From_Mac(self, MAC):
+        for host in self.hosts:
+            if host.MAC == MAC:
+                returnhost = host
+                return returnhost
 
     #def check_Router_For_MAC_IP_Pair(self, IP, MAC, message):
     #    for host in self.hosts:
@@ -57,7 +63,7 @@ class Host:
 
     def getRouterInfo(self):
         IP = self.network.findRouter(self)
-        MAC = self.network.Search_network_for_MAC_from_IP(IP)
+        MAC = self.network.Send_ARP_Request(IP)
         self.Add_To_Cache(IP, MAC)
 
     def SendMessage(self, destIP, message):
@@ -65,9 +71,9 @@ class Host:
         if destIP in self.cache:
             MAC = self.cache[destIP]
         else:
-            MAC = self.network.Search_network_for_MAC_from_IP(destIP)
+            MAC = self.network.Send_ARP_Request(destIP)
             self.Send_ARP_Reply(destIP)
-        dest_host = network.findHost(destIP, MAC)
+        dest_host = network.findHost_From_Mac(MAC)
         dest_host.ReceiveMessage(message + self.name)
 
     def ReceiveMessage(self, message):
@@ -82,20 +88,20 @@ class Host:
         if destIP in self.cache:
             MAC = self.cache[destIP]
         else:
-            MAC = self.network.Search_network_for_MAC_from_IP(destIP)
+            MAC = self.network.Send_ARP_Request(destIP)
             self.cache.update({destIP: MAC})
         dest_host = network.findHost(destIP, MAC)
         dest_host.Recieve_ARP_Reply(self.IP, self.MAC)
 
-    def Send_Spoofed_ARP_Reply(self, destIP, newMac):
+    def Send_Spoofed_ARP_Reply(self, destIP, newIP):
         MAC = ""
         if destIP in self.cache:
             MAC = self.cache[destIP]
         else:
-            MAC = self.network.Search_network_for_MAC_from_IP(destIP)
+            MAC = self.network.Send_ARP_Request(destIP)
             self.cache.update({destIP: MAC})
         dest_host = network.findHost(destIP, MAC)
-        dest_host.Recieve_ARP_Reply(self.IP, newMac)      
+        dest_host.Recieve_ARP_Reply(newIP, self.MAC)      
 
     def __str__(self) -> str:
         return f"{self.name} || {self.IP} || {self.MAC}"
@@ -106,9 +112,11 @@ computer1 = Host("Computer1", "127.00.01", "01-01-01-01-01-01", network, False)
 computer2 = Host("Computer2", "127.00.02", "02-02-02-02-02-02", network, False)
 attacker = Host("Attacker", "127.00.03", "03-03-03-03-03-03", network, False)
 
-#print(router.cache)
 computer1.SendMessage(computer2.IP, "hello")
-attacker.Send_Spoofed_ARP_Reply(computer2.IP, '01-01-01-01-01-01')
+print(computer1.cache)
+attacker.Send_Spoofed_ARP_Reply(computer1.IP, '127.00.02')
+print(computer1.cache)
+computer1.SendMessage(computer2.IP, "hello")
 
 for host in network.hosts:
     print(host.name)
