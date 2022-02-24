@@ -2,6 +2,8 @@ from email import message
 from typing import Type
 from xmlrpc.client import Boolean
 
+from sqlalchemy import false
+
 class Network:
     def __init__(self):
         self.hosts = []
@@ -49,6 +51,9 @@ class Host:
         self.cache = {}
         self.network = network
         self.isRouter = isRouter
+        self.relay = False
+        self.spoofedMACS = []
+        self.message_alter = ''
         network.Connect_computer_to_network(self)
         if isRouter == False:
             self.getRouterInfo()
@@ -74,10 +79,13 @@ class Host:
             MAC = self.network.Send_ARP_Request(destIP)
             self.Send_ARP_Reply(destIP)
         dest_host = network.findHost_From_Mac(MAC)
-        dest_host.ReceiveMessage(message + self.name)
+        dest_host.ReceiveMessage(message + ' from ' + self.name, self.MAC)
 
-    def ReceiveMessage(self, message):
-        print(f"{self.name} has received message: {message}")
+    def ReceiveMessage(self, message, MAC):
+        if self.relay:
+            self.Relay_Message(message, MAC)
+        else:
+            print(f"{self.name} has received message: {message}")
 
     def Recieve_ARP_Reply(self, IP, MAC):
         self.Add_To_Cache(IP, MAC)
@@ -100,8 +108,23 @@ class Host:
         else:
             MAC = self.network.Send_ARP_Request(destIP)
             self.cache.update({destIP: MAC})
+        self.spoofedMACS.append(MAC)
         dest_host = network.findHost(destIP, MAC)
-        dest_host.Recieve_ARP_Reply(newIP, self.MAC)      
+        dest_host.Recieve_ARP_Reply(newIP, self.MAC)
+
+    def Start_Relay(self, message_alter = ''):
+        self.relay = True
+        self.message_alter = message_alter
+
+    def Relay_Message(self, message, MAC):
+        if self.spoofedMACS[0] == MAC:
+            dest_host = network.findHost_From_Mac(self.spoofedMACS[1])
+            print(f'{self.name} relaying and reading message {message}')
+            dest_host.ReceiveMessage(message + self.message_alter, self.spoofedMACS[1])
+        else:
+            dest_host = network.findHost_From_Mac(self.spoofedMACS[0])
+            print(f'{self.name} relaying and reading message {message}')
+            dest_host.ReceiveMessage(message + self.message_alter, self.spoofedMACS[0])
 
     def __str__(self) -> str:
         return f"{self.name} || {self.IP} || {self.MAC}"
@@ -113,11 +136,13 @@ computer2 = Host("Computer2", "127.00.02", "02-02-02-02-02-02", network, False)
 attacker = Host("Attacker", "127.00.03", "03-03-03-03-03-03", network, False)
 
 computer1.SendMessage(computer2.IP, "hello")
-print(computer1.cache)
 attacker.Send_Spoofed_ARP_Reply(computer1.IP, '127.00.02')
-print(computer1.cache)
+attacker.Send_Spoofed_ARP_Reply(computer2.IP, '127.00.01')
+attacker.Start_Relay(" LMAO HACKED LOSER")
+print(attacker.spoofedMACS)
+computer2.SendMessage(computer1.IP, "hello")
 computer1.SendMessage(computer2.IP, "hello")
 
-for host in network.hosts:
-    print(host.name)
-    print(host.cache)
+#for host in network.hosts:
+#    print(host.name)
+#    print(host.cache)
