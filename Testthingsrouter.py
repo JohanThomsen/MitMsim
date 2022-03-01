@@ -11,7 +11,8 @@ class Network:
     def Connect_computer_to_network(self, host):
         self.hosts.append(host)
 
-    def Send_ARP_Request(self, IP):
+    def Send_ARP_Request(self, sourceHost, IP):
+        print(f"{sourceHost.name} is requesting ARP reply from IP: {IP}")
         for host in self.hosts:
             if host.IP == IP:
                 return host.MAC
@@ -47,8 +48,7 @@ class Host:
         self.spoofedMACS = []
         self.message_alter = ''
         network.Connect_computer_to_network(self)
-        if isRouter == False:
-            self.getRouterInfo()
+
 
     def Add_To_Cache(self, IP, MAC):
         self.cache.update({IP: MAC})
@@ -59,6 +59,7 @@ class Host:
         return "0"
 
     def getRouterInfo(self):
+        print()
         IP = self.network.findRouter(self)
         MAC = self.network.Send_ARP_Request(IP)
         self.Add_To_Cache(IP, MAC)
@@ -68,7 +69,7 @@ class Host:
         if destIP in self.cache:
             MAC = self.cache[destIP]
         else:
-            MAC = self.network.Send_ARP_Request(destIP)
+            MAC = self.network.Send_ARP_Request(self, destIP)
             self.Send_ARP_Reply(destIP)
         dest_host = network.findHost_From_Mac(MAC)
         dest_host.ReceiveMessage(message + ' from ' + self.name, self.MAC)
@@ -80,17 +81,20 @@ class Host:
             print(f"{self.name} has received message: {message}")
 
     def Recieve_ARP_Reply(self, IP, MAC):
+        print(f"{self.name} has received ARP reply containing: IP: {IP} MAC: {MAC}")
         self.Add_To_Cache(IP, MAC)
 
     def Send_ARP_Reply(self, destIP):
         MAC = self.__Get_MAC_and_update_cache(destIP)
         dest_host = network.findHost(destIP, MAC)
+        print(f"{self.name} is sending ARP reply to {dest_host.name} containing: IP: {self.IP} MAC: {self.MAC}")
         dest_host.Recieve_ARP_Reply(self.IP, self.MAC)
 
     def Send_Spoofed_ARP_Reply(self, destIP, newIP):
         MAC = self.__Get_MAC_and_update_cache(destIP)
         self.spoofedMACS.append(MAC)
         dest_host = network.findHost(destIP, MAC)
+        print(f"{self.name} is sending spoofed ARP reply to {dest_host.name} containing: IP: {newIP} MAC: {self.MAC}")
         dest_host.Recieve_ARP_Reply(newIP, self.MAC)
     
     def __Get_MAC_and_update_cache(self, destIP):
@@ -98,11 +102,12 @@ class Host:
         if destIP in self.cache:
             MAC = self.cache[destIP]
         else:
-            MAC = self.network.Send_ARP_Request(destIP)
+            MAC = self.network.Send_ARP_Request(self, destIP)
             self.cache.update({destIP: MAC})
         return MAC
 
     def Start_Relay(self, message_alter = ''):
+        print(f"{self.name} relaying with message: {message_alter}")
         self.relay = True
         self.message_alter = message_alter
 
@@ -122,15 +127,22 @@ class Host:
         return f"{self.name} || {self.IP} || {self.MAC}"
 
 network = Network()
-router = Host("Router", "127.00.00", "00-00-00-00-00-00", network, True)
-computer1 = Host("Computer1", "127.00.01", "01-01-01-01-01-01", network, False)
-computer2 = Host("Computer2", "127.00.02", "02-02-02-02-02-02", network, False)
-attacker = Host("Attacker", "127.00.03", "03-03-03-03-03-03", network, False)
+router = Host("Router", "192.60.20.0", "00-00-00-00-00-00", network, True)
+computer1 = Host("Computer1", "192.60.20.1", "01-01-01-01-01-01", network, False)
+computer2 = Host("Computer2", "192.60.20.2", "02-02-02-02-02-02", network, False)
+attacker = Host("Attacker", "192.60.20.3", "03-03-03-03-03-03", network, False)
 
+print("---------------------------------------------------------------------------------------------")
+computer1.SendMessage(router.IP, "hello")
+print("---------------------------------------------------------------------------------------------")
 computer1.SendMessage(computer2.IP, "hello")
-attacker.Send_Spoofed_ARP_Reply(computer1.IP, '127.00.02')
-attacker.Send_Spoofed_ARP_Reply(computer2.IP, '127.00.01')
-attacker.Start_Relay(" LMAO HACKED LOSER")
-print(attacker.spoofedMACS)
-computer2.SendMessage(computer1.IP, "hello")
-computer1.SendMessage(computer2.IP, "hello")
+print("---------------------------------------------------------------------------------------------")
+attacker.Send_Spoofed_ARP_Reply(computer1.IP, '192.60.20.0')
+print("---------------------------------------------------------------------------------------------")
+attacker.Send_Spoofed_ARP_Reply(router.IP, '192.60.20.1')
+print("---------------------------------------------------------------------------------------------")
+attacker.Start_Relay(" Altered by attacker")
+print("---------------------------------------------------------------------------------------------")
+router.SendMessage(computer1.IP, "hello")
+print("---------------------------------------------------------------------------------------------")
+computer1.SendMessage(router.IP, "hello")
