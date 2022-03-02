@@ -2,7 +2,6 @@ from email import message
 from typing import Type
 from xmlrpc.client import Boolean
 
-from sqlalchemy import false
 
 class Network:
     def __init__(self):
@@ -15,6 +14,7 @@ class Network:
         print(f"{sourceHost.name} is requesting ARP reply from IP: {IP}")
         for host in self.hosts:
             if host.IP == IP:
+                host.Recieve_ARP_Reply(sourceHost.IP,sourceHost.MAC)
                 return host.MAC
             if IP in host.cache:
                 return host.cache[IP]
@@ -53,24 +53,13 @@ class Host:
     def Add_To_Cache(self, IP, MAC):
         self.cache.update({IP: MAC})
 
-    def Request_MAC_Adress(self, IP):
-        if IP in self.cache:
-            return self.cache[IP]
-        return "0"
-
-    def getRouterInfo(self):
-        print()
-        IP = self.network.findRouter(self)
-        MAC = self.network.Send_ARP_Request(IP)
-        self.Add_To_Cache(IP, MAC)
-
     def SendMessage(self, destIP, message):
         MAC = ""
         if destIP in self.cache:
             MAC = self.cache[destIP]
         else:
             MAC = self.network.Send_ARP_Request(self, destIP)
-            self.Send_ARP_Reply(destIP)
+        self.Recieve_ARP_Reply(destIP, MAC)
         dest_host = network.findHost_From_Mac(MAC)
         dest_host.ReceiveMessage(message + ' from ' + self.name, self.MAC)
 
@@ -84,11 +73,8 @@ class Host:
         print(f"{self.name} has received ARP reply containing: IP: {IP} MAC: {MAC}")
         self.Add_To_Cache(IP, MAC)
 
-    def Send_ARP_Reply(self, destIP):
-        MAC = self.__Get_MAC_and_update_cache(destIP)
-        dest_host = network.findHost(destIP, MAC)
-        print(f"{self.name} is sending ARP reply to {dest_host.name} containing: IP: {self.IP} MAC: {self.MAC}")
-        dest_host.Recieve_ARP_Reply(self.IP, self.MAC)
+    #Everything under here is only used by attacker
+
 
     def Send_Spoofed_ARP_Reply(self, destIP, newIP):
         MAC = self.__Get_MAC_and_update_cache(destIP)
@@ -103,7 +89,7 @@ class Host:
             MAC = self.cache[destIP]
         else:
             MAC = self.network.Send_ARP_Request(self, destIP)
-            self.cache.update({destIP: MAC})
+            self.Recieve_ARP_Reply(destIP, MAC)
         return MAC
 
     def Start_Relay(self, message_alter = ''):
@@ -121,7 +107,6 @@ class Host:
         dest_host = network.findHost_From_Mac(MAC)
         print(f'{self.name} relaying and reading message {message}')
         dest_host.ReceiveMessage(message + self.message_alter, MAC)
-
 
     def __str__(self) -> str:
         return f"{self.name} || {self.IP} || {self.MAC}"
