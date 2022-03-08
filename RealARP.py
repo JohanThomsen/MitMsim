@@ -1,6 +1,7 @@
 from email import message
 from typing import Type
 from xmlrpc.client import Boolean
+from ArpPackage import ARPPackage
 
 
 class Network:
@@ -10,14 +11,18 @@ class Network:
     def Connect_computer_to_network(self, host):
         self.hosts.append(host)
 
-    def Send_ARP_Request(self, sourceHost, IP):
-        print(f"{sourceHost.name} is requesting ARP reply from IP: {IP}")
-        for host in self.hosts:
-            if host.IP == IP:
-                host.Recieve_ARP_Reply(sourceHost.IP,sourceHost.MAC)
-                return host.MAC
-            if IP in host.cache:
-                return host.cache[IP]
+    def Handle_ARP_Request(self, ARP_request: ARPPackage):
+        destIP = ARP_request.Payload['Target IP address']
+
+        if ARP_request.Payload['Opcode'] == 1:
+            print(f"{self.findHost_From_Mac(ARP_request.Header['Source']).name} is requesting ARP reply from IP: {destIP}")
+            for host in self.hosts:
+                if host.IP == destIP:
+                    ARP_Reply = host.Answer_ARP_Request(ARP_request)
+                    self.Handle_ARP_Request(ARP_Reply)
+        elif ARP_request.Payload['Opcode'] == 2:
+            self.findHost_From_Mac(ARP_request.Header['Destination']).Recieve_ARP_Reply(ARP_request)
+
 
     def findRouter(self, inHost):
         for host in self.hosts:
@@ -49,19 +54,32 @@ class Host:
         self.message_alter = ''
         network.Connect_computer_to_network(self)
 
+    #Function regarding ARP requests/replies and caching
 
     def Add_To_Cache(self, IP, MAC):
         self.cache.update({IP: MAC})
 
+    def Recieve_ARP_Reply(self, ARP_reply: ARPPackage):
+        print(f"{self.name} has received ARP reply containing: IP: {ARP_reply.Payload['Sender IP address']} MAC: {ARP_reply.Payload['Sender MAC address']}")
+        self.Add_To_Cache(ARP_reply.Payload['Sender IP address'], ARP_reply.Payload['Sender MAC address'])
+    
+    def Answer_ARP_Request(self, ARP_request: ARPPackage):
+        print(f"{self.name} has received ARP request from: IP: {ARP_request.Payload['Sender IP address']} MAC: {ARP_request.Payload['Sender MAC address']}")
+        self.Add_To_Cache(ARP_request.Payload['Sender IP address'], ARP_request.Payload['Sender MAC address'])
+        ARP_Reply = ARPPackage(self.MAC, self.IP, ARP_request.Payload['Sender MAC address'], ARP_request.Payload['Sender IP address'], 2)
+        return ARP_Reply
+
+    #Everything under here is used to send a message(And is therefore simplified as it does not have anything to do with ARP)
     def SendMessage(self, destIP, message):
         MAC = ""
         if destIP in self.cache:
             MAC = self.cache[destIP]
+            dest_host = network.findHost_From_Mac(MAC)
+            dest_host.ReceiveMessage(message + ' from ' + self.name, self.MAC)
         else:
-            MAC = self.network.Send_ARP_Request(self, destIP)
-            self.Recieve_ARP_Reply(destIP, MAC)
-        dest_host = network.findHost_From_Mac(MAC)
-        dest_host.ReceiveMessage(message + ' from ' + self.name, self.MAC)
+            ARP_request = ARPPackage(self.MAC, self.IP, '', destIP, 1)
+            self.network.Handle_ARP_Request(ARP_request)
+            self.SendMessage(destIP, message)
 
     def ReceiveMessage(self, message, MAC):
         if self.relay:
@@ -69,28 +87,17 @@ class Host:
         else:
             print(f"{self.name} has received message: {message}")
 
-    def Recieve_ARP_Reply(self, IP, MAC):
-        print(f"{self.name} has received ARP reply containing: IP: {IP} MAC: {MAC}")
-        self.Add_To_Cache(IP, MAC)
 
     #Everything under here is only used by attacker
-
-
     def Send_Spoofed_ARP_Reply(self, destIP, newIP):
-        MAC = self.__Get_MAC_and_update_cache(destIP)
+        ARP_request = ARPPackage(self.MAC, self.IP, '', destIP, 1)
+        self.network.Handle_ARP_Request(ARP_request)
+        MAC = self.cache[destIP]
         self.spoofedMACS.append(MAC)
-        dest_host = network.findHost(destIP, MAC)
-        print(f"{self.name} is sending spoofed ARP reply to {dest_host.name} containing: IP: {newIP} MAC: {self.MAC}")
-        dest_host.Recieve_ARP_Reply(newIP, self.MAC)
-    
-    def __Get_MAC_and_update_cache(self, destIP):
-        MAC = ""
-        if destIP in self.cache:
-            MAC = self.cache[destIP]
-        else:
-            MAC = self.network.Send_ARP_Request(self, destIP)
-            self.Recieve_ARP_Reply(destIP, MAC)
-        return MAC
+
+        spoofed_ARP_Reply = ARPPackage(self.MAC, newIP, MAC, destIP, 2)
+        print(f"{self.name} is sending spoofed ARP reply to {self.network.findHost(destIP, MAC).name} containing: IP: {newIP} MAC: {self.MAC}")
+        self.network.Handle_ARP_Request(spoofed_ARP_Reply)
 
     def Start_Relay(self, message_alter = ''):
         print(f"{self.name} relaying with message: {message_alter}")
@@ -117,6 +124,9 @@ computer1 = Host("Computer1", "192.60.20.1", "01-01-01-01-01-01", network, False
 computer2 = Host("Computer2", "192.60.20.2", "02-02-02-02-02-02", network, False)
 attacker = Host("Attacker", "192.60.20.3", "03-03-03-03-03-03", network, False)
 
+for host in network.hosts:
+    print(f'{host.name} | {host.cache}')
+
 print("---------------------------------------------------------------------------------------------")
 computer1.SendMessage(router.IP, "hello")
 print("---------------------------------------------------------------------------------------------")
@@ -131,3 +141,6 @@ print("-------------------------------------------------------------------------
 router.SendMessage(computer1.IP, "hello")
 print("---------------------------------------------------------------------------------------------")
 computer1.SendMessage(router.IP, "hello")
+
+for host in network.hosts:
+        print(f'{host.name} | {host.cache}')
